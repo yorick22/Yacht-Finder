@@ -6,7 +6,7 @@ class AISClient {
         this.onStatus = onStatus;
         this.reconnectTimer = null;
         this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
+        this.maxReconnectAttempts = 10;
         this.fleetMMSIs = new Set();
     }
 
@@ -52,26 +52,43 @@ class AISClient {
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                if (data.ERROR || data.error) {
+                    const errMsg = data.ERROR || data.error || 'Unknown API error';
+                    this.onStatus('error', 'API: ' + errMsg);
+                    return;
+                }
+                if (!data.MessageType && !data.MetaData) {
+                    this.onStatus('warn', 'Unexpected message: ' + event.data.substring(0, 200));
+                    return;
+                }
                 if (this.fleetMMSIs.size > 0) {
                     const mmsi = String((data.MetaData || {}).MMSI || '');
                     if (!this.fleetMMSIs.has(mmsi)) return;
                 }
                 this.onMessage(data);
             } catch (e) {
-                // skip malformed messages
+                this.onStatus('warn', 'Malformed message: ' + event.data.substring(0, 100));
             }
         };
 
-        this.ws.onerror = () => {
-            this.onStatus('error', 'WebSocket error');
+        this.ws.onerror = (event) => {
+            this.onStatus('error', 'WebSocket error (connection lost or refused)');
         };
 
-        this.ws.onclose = () => {
-            this.onStatus('disconnected');
+        this.ws.onclose = (event) => {
+            const reason = event.reason || '';
+            const codeInfo = 'code ' + event.code + (reason ? ': ' + reason : '');
+            if (event.code === 1000) {
+                this.onStatus('disconnected', 'Connection closed normally');
+            } else if (event.code === 1006) {
+                this.onStatus('error', 'Connection dropped unexpectedly (' + codeInfo + ')');
+            } else {
+                this.onStatus('disconnected', 'Closed (' + codeInfo + ')');
+            }
             if (this.reconnectAttempts < this.maxReconnectAttempts) {
                 const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 30000);
                 this.reconnectAttempts++;
-                this.onStatus('reconnecting', `Attempt ${this.reconnectAttempts}...`);
+                this.onStatus('reconnecting', 'Attempt ' + this.reconnectAttempts + '/' + this.maxReconnectAttempts + ' in ' + (delay/1000) + 's...');
                 this.reconnectTimer = setTimeout(() => this._connect(), delay);
             }
         };
