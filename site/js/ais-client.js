@@ -1,23 +1,22 @@
 class AISClient {
     constructor(onMessage, onStatus) {
-        this.connections = [];
+        this.ws = null;
         this.apiKey = null;
         this.onMessage = onMessage;
         this.onStatus = onStatus;
+        this.reconnectTimer = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
         this.fleetMMSIs = new Set();
         this.totalMessages = 0;
         this.fleetMessages = 0;
         this.lastStatsTime = Date.now();
     }
 
-    static BATCH_SIZE = 50;
-    static STAGGER_MS = 1500;
-    static MAX_RECONNECT = 10;
-
     connect(apiKey, boundingBoxes, fleetOnly) {
-        this.disconnect();
         this.apiKey = apiKey;
         this.boundingBoxes = boundingBoxes;
+        this.reconnectAttempts = 0;
         this.totalMessages = 0;
         this.fleetMessages = 0;
         this.lastStatsTime = Date.now();
@@ -27,141 +26,99 @@ class AISClient {
             FLEET.forEach(f => { if (f.m) this.fleetMMSIs.add(f.m); });
         }
 
-        if (this.fleetMMSIs.size > 0) {
-            const mmsiArray = Array.from(this.fleetMMSIs);
-            const batches = [];
-            for (let i = 0; i < mmsiArray.length; i += AISClient.BATCH_SIZE) {
-                batches.push(mmsiArray.slice(i, i + AISClient.BATCH_SIZE));
-            }
-            this.onStatus('info', 'Opening ' + batches.length + ' streams for ' + mmsiArray.length + ' vessels (max ' + AISClient.BATCH_SIZE + '/stream)');
-            batches.forEach((batch, idx) => {
-                const delay = idx * AISClient.STAGGER_MS;
-                setTimeout(() => {
-                    if (this.apiKey) {
-                        this._createConnection(batch, idx, batches.length);
-                    }
-                }, delay);
-            });
-        } else {
-            this._createConnection(null, 0, 1);
-        }
+        this._connect();
     }
 
-    _createConnection(mmsiBatch, index, total) {
-        const conn = {
-            ws: null,
-            reconnectTimer: null,
-            reconnectAttempts: 0,
-            index: index,
-            mmsiBatch: mmsiBatch,
-            active: true
-        };
-        this.connections.push(conn);
-        this._connectOne(conn);
-    }
-
-    _connectOne(conn) {
-        if (!conn.active) return;
-        if (conn.ws) {
-            conn.ws.onclose = null;
-            conn.ws.close();
+    _connect() {
+        if (this.ws) {
+            this.ws.onclose = null;
+            this.ws.close();
         }
+
+        this.onStatus('connecting');
 
         try {
-            conn.ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+            this.ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
         } catch (e) {
-            this.onStatus('error', 'Failed to create WebSocket #' + (conn.index + 1));
+            this.onStatus('error', 'Failed to create WebSocket');
             return;
         }
 
-        conn.ws.onopen = () => {
+        this.ws.onopen = () => {
             const subscription = {
                 Apikey: this.apiKey,
                 BoundingBoxes: this.boundingBoxes,
                 FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'StandardClassBPositionReport']
             };
-            if (conn.mmsiBatch) {
-                subscription.FiltersShipMMSI = conn.mmsiBatch;
-            }
-            conn.ws.send(JSON.stringify(subscription));
-            conn.reconnectAttempts = 0;
-
-            const openCount = this.connections.filter(c => c.ws && c.ws.readyState === WebSocket.OPEN).length;
-            this.onStatus('connected', openCount + '/' + this.connections.length + ' streams');
-            if (conn.index === 0) {
-                this.onStatus('info', 'Stream #1 connected — waiting for AIS data...');
-            }
+            this.onStatus('info', 'Subscription: ' + this.boundingBoxes.length + ' regions, filtering ' + this.fleetMMSIs.size + ' MMSIs client-side');
+            this.ws.send(JSON.stringify(subscription));
+            this.onStatus('connected');
+            this.reconnectAttempts = 0;
         };
 
-        conn.ws.onmessage = (event) => {
+        this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.ERROR || data.error) {
                     const errMsg = data.ERROR || data.error || 'Unknown API error';
-                    this.onStatus('error', 'Stream #' + (conn.index + 1) + ': ' + errMsg);
+                    this.onStatus('error', 'API: ' + errMsg);
                     return;
                 }
                 if (!data.MessageType && !data.MetaData) return;
 
                 this.totalMessages++;
-                this.fleetMessages++;
 
                 if (this.totalMessages === 1) {
-                    this.onStatus('info', 'First AIS message received — data is flowing!');
+                    this.onStatus('info', 'First AIS message received — data is flowing');
                 }
 
-                if (this.totalMessages % 50 === 0) {
+                if (this.totalMessages % 1000 === 0) {
                     const elapsed = Math.round((Date.now() - this.lastStatsTime) / 1000);
-                    this.onStatus('info', 'AIS: ' + this.totalMessages + ' messages, ' + this.fleetMessages + ' fleet vessels (' + elapsed + 's)');
+                    this.onStatus('info', 'AIS stream: ' + this.totalMessages + ' total, ' + this.fleetMessages + ' fleet matches (' + elapsed + 's)');
                 }
 
+                if (this.fleetMMSIs.size > 0) {
+                    const mmsi = String((data.MetaData || {}).MMSI || '');
+                    if (!this.fleetMMSIs.has(mmsi)) return;
+                    this.fleetMessages++;
+                }
                 this.onMessage(data);
             } catch (e) {
                 // ignore malformed
             }
         };
 
-        conn.ws.onerror = () => {
-            // onclose will follow with details
+        this.ws.onerror = () => {
+            this.onStatus('error', 'WebSocket error (connection lost or refused)');
         };
 
-        conn.ws.onclose = (event) => {
-            if (!conn.active) return;
+        this.ws.onclose = (event) => {
             const reason = event.reason || '';
             const codeInfo = 'code ' + event.code + (reason ? ': ' + reason : '');
-
-            if (event.code !== 1000 && conn.reconnectAttempts < AISClient.MAX_RECONNECT) {
-                const delay = Math.min(2000 * Math.pow(2, conn.reconnectAttempts), 30000);
-                conn.reconnectAttempts++;
-                if (conn.reconnectAttempts <= 2) {
-                    this.onStatus('warn', 'Stream #' + (conn.index + 1) + ' dropped (' + codeInfo + '), retry ' + conn.reconnectAttempts + ' in ' + (delay/1000) + 's');
-                }
-                conn.reconnectTimer = setTimeout(() => this._connectOne(conn), delay);
-            } else if (event.code !== 1000) {
-                this.onStatus('error', 'Stream #' + (conn.index + 1) + ' gave up after ' + AISClient.MAX_RECONNECT + ' retries');
-            }
-
-            const activeCount = this.connections.filter(c => c.ws && c.ws.readyState === WebSocket.OPEN).length;
-            if (activeCount === 0 && this.connections.every(c => c.reconnectAttempts >= AISClient.MAX_RECONNECT || !c.active)) {
-                this.onStatus('disconnected', 'All streams disconnected');
+            if (event.code === 1000) {
+                this.onStatus('disconnected', 'Connection closed normally');
+            } else if (event.code === 1006) {
+                this.onStatus('error', 'Connection dropped (' + codeInfo + ')');
             } else {
-                this.onStatus('connected', activeCount + '/' + this.connections.length + ' streams');
+                this.onStatus('disconnected', 'Closed (' + codeInfo + ')');
+            }
+            if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 30000);
+                this.reconnectAttempts++;
+                this.onStatus('reconnecting', 'Attempt ' + this.reconnectAttempts + '/' + this.maxReconnectAttempts + ' in ' + (delay/1000) + 's...');
+                this.reconnectTimer = setTimeout(() => this._connect(), delay);
             }
         };
     }
 
     disconnect() {
-        this.connections.forEach(conn => {
-            conn.active = false;
-            clearTimeout(conn.reconnectTimer);
-            if (conn.ws) {
-                conn.ws.onclose = null;
-                conn.ws.close();
-                conn.ws = null;
-            }
-        });
-        this.connections = [];
-        this.apiKey = null;
+        clearTimeout(this.reconnectTimer);
+        this.reconnectAttempts = this.maxReconnectAttempts;
+        if (this.ws) {
+            this.ws.onclose = null;
+            this.ws.close();
+            this.ws = null;
+        }
         this.onStatus('disconnected');
     }
 
@@ -235,6 +192,18 @@ class AISClient {
             15: 'Not defined'
         };
         return statuses[code] || 'Unknown';
+    }
+
+    static getYachtRegions() {
+        return [
+            [[30, -6], [46, 37]],
+            [[46, -12], [62, 12]],
+            [[53, 5], [66, 30]],
+            [[10, -90], [28, -58]],
+            [[24, -83], [45, -65]],
+            [[-10, 95], [22, 130]],
+            [[10, 45], [32, 70]]
+        ];
     }
 
     static getBoundingBox(region) {

@@ -531,9 +531,10 @@
         updateLiveCount();
 
         log('Starting live AIS mode — fleet has ' + vessels.size + ' vessels', 'info');
-        log('Using server-side MMSI filtering (batches of 50)...', 'info');
 
-        const boundingBoxes = AISClient.getBoundingBox('global');
+        const boundingBoxes = AISClient.getYachtRegions();
+        log('Covering ' + boundingBoxes.length + ' regions (Med, North Sea, Scandinavia, Caribbean, US East, SE Asia, Arabian Gulf)', 'info');
+
         let fleetHits = 0;
 
         aisClient = new AISClient(
@@ -551,11 +552,16 @@
             },
             (status, detail) => {
                 if (status === 'connected') {
-                    setStatus('connected', 'Live AIS (' + (detail || '') + ')');
+                    setStatus('connected', 'Live AIS');
+                    log('Connected to AISStream.io', 'success');
                 } else if (status === 'disconnected') {
                     setStatus('disconnected', 'Disconnected');
                     log('Disconnected: ' + (detail || ''), 'warn');
+                } else if (status === 'reconnecting') {
+                    setStatus('disconnected', detail || 'Reconnecting...');
+                    log('Reconnecting: ' + (detail || ''), 'warn');
                 } else if (status === 'error') {
+                    setStatus('disconnected', detail || 'Error');
                     log('ERROR: ' + (detail || 'unknown error'), 'error');
                 } else if (status === 'warn') {
                     log(detail || '', 'warn');
@@ -563,6 +569,7 @@
                     log(detail || '', 'info');
                 } else if (status === 'connecting') {
                     setStatus('disconnected', 'Connecting...');
+                    log('Connecting to AISStream.io...', 'info');
                 }
             }
         );
