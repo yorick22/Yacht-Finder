@@ -26,7 +26,7 @@
                     <span class="status-dot"></span>
                     <span class="status-text">Disconnected</span>
                 </div>
-                <span id="vessel-count" class="vessel-count">0 vessels</span>
+                <span id="vessel-count" class="vessel-count">0 yachts</span>
                 <button id="settings-btn" class="icon-btn" title="Settings">&#9881;</button>
             </div>
         </header>
@@ -89,6 +89,14 @@
                         <div class="detail-item">
                             <label>Draught</label>
                             <span id="detail-draught">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Year Built</label>
+                            <span id="detail-year">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Construction Nr</label>
+                            <span id="detail-construction">—</span>
                         </div>
                         <div class="detail-item">
                             <label>Position</label>
@@ -177,6 +185,7 @@
     </div>
 
     <script src="js/leaflet.js"></script>
+    <script src="js/fleet-data.js"></script>
     <script src="js/demo-data.js"></script>
     <script src="js/ais-client.js"></script>
     <script src="js/app.js"></script>

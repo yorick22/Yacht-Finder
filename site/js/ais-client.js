@@ -7,12 +7,19 @@ class AISClient {
         this.reconnectTimer = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
+        this.fleetMMSIs = new Set();
     }
 
-    connect(apiKey, boundingBoxes) {
+    connect(apiKey, boundingBoxes, fleetOnly) {
         this.apiKey = apiKey;
         this.boundingBoxes = boundingBoxes;
         this.reconnectAttempts = 0;
+
+        this.fleetMMSIs.clear();
+        if (fleetOnly && typeof FLEET !== 'undefined') {
+            FLEET.forEach(f => { if (f.m) this.fleetMMSIs.add(f.m); });
+        }
+
         this._connect();
     }
 
@@ -45,6 +52,10 @@ class AISClient {
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                if (this.fleetMMSIs.size > 0) {
+                    const mmsi = String((data.MetaData || {}).MMSI || '');
+                    if (!this.fleetMMSIs.has(mmsi)) return;
+                }
                 this.onMessage(data);
             } catch (e) {
                 // skip malformed messages
@@ -87,6 +98,18 @@ class AISClient {
             name: (meta.ShipName || '').trim(),
             lastUpdate: meta.time_utc ? new Date(meta.time_utc) : new Date()
         };
+
+        // Enrich with fleet data if available
+        if (typeof FLEET !== 'undefined') {
+            const fleetEntry = FLEET.find(f => f.m === vessel.mmsi);
+            if (fleetEntry) {
+                if (!vessel.name || vessel.name === '') vessel.name = fleetEntry.n;
+                vessel.imo = vessel.imo || fleetEntry.i;
+                vessel.shipType = vessel.shipType || fleetEntry.t;
+                vessel.yearBuilt = fleetEntry.y;
+                vessel.constructionNr = fleetEntry.c;
+            }
+        }
 
         if (msgType === 'PositionReport' || msgType === 'StandardClassBPositionReport') {
             const pos = msg.PositionReport || msg.StandardClassBPositionReport || {};
