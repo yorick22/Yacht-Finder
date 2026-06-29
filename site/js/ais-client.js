@@ -49,6 +49,10 @@ class AISClient {
             this.reconnectAttempts = 0;
         };
 
+        this.totalMessages = 0;
+        this.fleetMessages = 0;
+        this.lastStatsTime = Date.now();
+
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
@@ -61,9 +65,22 @@ class AISClient {
                     this.onStatus('warn', 'Unexpected message: ' + event.data.substring(0, 200));
                     return;
                 }
+
+                this.totalMessages++;
+
+                if (this.totalMessages === 1) {
+                    this.onStatus('info', 'First AIS message received — data is flowing');
+                }
+
+                if (this.totalMessages % 500 === 0) {
+                    const elapsed = Math.round((Date.now() - this.lastStatsTime) / 1000);
+                    this.onStatus('info', 'AIS stream: ' + this.totalMessages + ' total messages, ' + this.fleetMessages + ' fleet matches (' + elapsed + 's elapsed)');
+                }
+
                 if (this.fleetMMSIs.size > 0) {
                     const mmsi = String((data.MetaData || {}).MMSI || '');
                     if (!this.fleetMMSIs.has(mmsi)) return;
+                    this.fleetMessages++;
                 }
                 this.onMessage(data);
             } catch (e) {
