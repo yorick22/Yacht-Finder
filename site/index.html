@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yacht Finder — Live AIS Tracker</title>
     <link rel="stylesheet" href="css/leaflet.css" />
-    <link rel="stylesheet" href="css/style.css?v=2" />
+    <link rel="stylesheet" href="css/style.css?v=3" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26F5;</text></svg>">
 </head>
 <body>
@@ -132,6 +132,19 @@
                 </div>
             </div>
 
+            <div id="log-panel" class="log-panel">
+                <div class="log-header">
+                    <span>Log</span>
+                    <div class="log-actions">
+                        <button id="log-clear" class="log-action-btn">Clear</button>
+                        <button id="log-toggle" class="log-action-btn">Hide</button>
+                    </div>
+                </div>
+                <div id="log-entries" class="log-entries"></div>
+            </div>
+
+            <button id="log-open-btn" class="log-open-btn hidden" title="Show log">Log</button>
+
             <div id="legend" class="map-legend">
                 <div class="legend-item"><span class="legend-dot" style="background:#2196F3"></span> Sailing yacht</div>
                 <div class="legend-item"><span class="legend-dot" style="background:#00BCD4"></span> Motor yacht</div>
@@ -185,9 +198,9 @@
     </div>
 
     <script src="js/leaflet.js"></script>
-    <script src="js/fleet-data.js?v=2"></script>
-    <script src="js/demo-data.js?v=2"></script>
-    <script src="js/ais-client.js?v=2"></script>
-    <script src="js/app.js?v=2"></script>
+    <script src="js/fleet-data.js?v=3"></script>
+    <script src="js/demo-data.js?v=3"></script>
+    <script src="js/ais-client.js?v=3"></script>
+    <script src="js/app.js?v=3"></script>
 </body>
 </html>
