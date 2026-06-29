@@ -531,7 +531,7 @@
         updateLiveCount();
 
         log('Starting live AIS mode — fleet has ' + vessels.size + ' vessels', 'info');
-        log('Connecting to AISStream.io (global bounding box)...', 'info');
+        log('Connecting to AISStream.io with MMSI server-side filtering...', 'info');
 
         const boundingBoxes = AISClient.getBoundingBox('global');
         let msgCount = 0;

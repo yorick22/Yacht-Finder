@@ -20,6 +20,7 @@ class AISClient {
             FLEET.forEach(f => { if (f.m) this.fleetMMSIs.add(f.m); });
         }
 
+        this.useServerFilter = fleetOnly && this.fleetMMSIs.size > 0;
         this._connect();
     }
 
@@ -44,6 +45,10 @@ class AISClient {
                 BoundingBoxes: this.boundingBoxes,
                 FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'StandardClassBPositionReport']
             };
+            if (this.useServerFilter) {
+                subscription.FiltersShipMMSI = Array.from(this.fleetMMSIs);
+                this.onStatus('info', 'Subscribing with ' + this.fleetMMSIs.size + ' MMSI filters (server-side)');
+            }
             this.ws.send(JSON.stringify(subscription));
             this.onStatus('connected');
             this.reconnectAttempts = 0;
