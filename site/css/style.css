@@ -149,6 +149,10 @@ body {
     color: var(--text-secondary);
 }
 
+.search-result-item.no-position {
+    opacity: 0.5;
+}
+
 .header-right {
     display: flex;
     align-items: center;
