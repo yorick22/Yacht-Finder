@@ -352,12 +352,17 @@
             if (matches.length === 0) {
                 results.innerHTML = '<div class="search-result-item"><span class="search-result-name">No results found</span></div>';
             } else {
-                results.innerHTML = matches.map(v => `
-                    <div class="search-result-item" data-mmsi="${v.mmsi}">
+                results.innerHTML = matches.map(v => {
+                    const hasPos = v.lat != null;
+                    const info = hasPos
+                        ? `${v.mmsi} · ${v.sog != null ? v.sog.toFixed(1) + ' kn' : ''}`
+                        : `${v.mmsi} · waiting for AIS`;
+                    return `
+                    <div class="search-result-item${hasPos ? '' : ' no-position'}" data-mmsi="${v.mmsi}">
                         <span class="search-result-name">${v.name || 'Unknown'}</span>
-                        <span class="search-result-mmsi">${v.mmsi} · ${v.sog != null ? v.sog.toFixed(1) + ' kn' : ''}</span>
-                    </div>
-                `).join('');
+                        <span class="search-result-mmsi">${info}</span>
+                    </div>`;
+                }).join('');
             }
             results.classList.remove('hidden');
         }, 200);
@@ -369,7 +374,14 @@
             if (!item) return;
             const mmsi = item.dataset.mmsi;
             if (mmsi && vessels.has(mmsi)) {
-                selectVessel(mmsi);
+                const v = vessels.get(mmsi);
+                if (v.lat != null) {
+                    selectVessel(mmsi);
+                } else {
+                    selectedMMSI = mmsi;
+                    updateDetailPanel(v);
+                    document.getElementById('sidebar').classList.remove('hidden');
+                }
                 input.value = '';
                 results.classList.add('hidden');
             }
@@ -460,6 +472,35 @@
         }
     }
 
+    let locatedCount = 0;
+
+    function preloadFleet() {
+        if (typeof FLEET === 'undefined') return;
+        FLEET.forEach(f => {
+            const mmsi = f.m || ('FLEET' + String(Math.random()).slice(2, 8));
+            if (vessels.has(mmsi)) return;
+            vessels.set(mmsi, {
+                mmsi,
+                name: f.n,
+                imo: f.i || null,
+                shipType: f.t,
+                yearBuilt: f.y || null,
+                constructionNr: f.c || null,
+                lat: null,
+                lng: null,
+                trail: [],
+                lastUpdate: null
+            });
+        });
+    }
+
+    function updateLiveCount() {
+        let located = 0;
+        vessels.forEach(v => { if (v.lat != null) located++; });
+        locatedCount = located;
+        document.getElementById('vessel-count').textContent = `${located}/${vessels.size} yachts located`;
+    }
+
     function startLive() {
         if (!settings.apiKey) {
             alert('Please enter your AISStream.io API key in Settings.');
@@ -469,13 +510,16 @@
 
         stopDemo();
         clearVessels();
+        preloadFleet();
+        updateLiveCount();
 
-        const boundingBoxes = AISClient.getBoundingBox(settings.region);
+        const boundingBoxes = AISClient.getBoundingBox('global');
 
         aisClient = new AISClient(
             (data) => {
                 const parsed = AISClient.parseAISMessage(data);
                 handleVesselUpdate(parsed);
+                updateLiveCount();
             },
             (status, detail) => {
                 if (status === 'connected') setStatus('connected', 'Live AIS');
