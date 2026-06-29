@@ -183,7 +183,7 @@
 
     function updateAllMarkers() {
         vessels.forEach(v => updateMarker(v));
-        document.getElementById('vessel-count').textContent = `${vessels.size} vessels`;
+        document.getElementById('vessel-count').textContent = `${vessels.size} yachts`;
     }
 
     function drawTrail(mmsi) {
@@ -284,6 +284,8 @@
             (length > 0 && width > 0) ? `${length}m × ${width}m` : '—';
         document.getElementById('detail-draught').textContent =
             vessel.draught ? `${vessel.draught}m` : '—';
+        document.getElementById('detail-year').textContent = vessel.yearBuilt || '—';
+        document.getElementById('detail-construction').textContent = vessel.constructionNr || '—';
     }
 
     function mmsiToFlag(mmsi) {
@@ -419,7 +421,8 @@
     function startDemo() {
         stopDemo();
         const region = settings.region || 'mediterranean';
-        const demoVessels = DemoData.generateVessels(40, region);
+        const fleetCount = typeof FLEET !== 'undefined' ? FLEET.length : 40;
+        const demoVessels = DemoData.generateVessels(fleetCount, region);
 
         demoVessels.forEach(v => {
             vessels.set(v.mmsi, v);
@@ -442,7 +445,7 @@
                 DemoData.updateVessel(v);
                 handleVesselUpdate(v);
             });
-            document.getElementById('vessel-count').textContent = `${vessels.size} vessels`;
+            document.getElementById('vessel-count').textContent = `${vessels.size} yachts`;
 
             if (document.getElementById('show-trails').checked) {
                 drawAllTrails();
@@ -483,7 +486,7 @@
             }
         );
 
-        aisClient.connect(settings.apiKey, boundingBoxes);
+        aisClient.connect(settings.apiKey, boundingBoxes, true);
     }
 
     function stopLive() {
@@ -503,7 +506,7 @@
         selectedMMSI = null;
         followMMSI = null;
         document.getElementById('sidebar').classList.add('hidden');
-        document.getElementById('vessel-count').textContent = '0 vessels';
+        document.getElementById('vessel-count').textContent = '0 yachts';
     }
 
     function setStatus(state, text) {
