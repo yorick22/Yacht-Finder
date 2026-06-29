@@ -569,6 +569,8 @@
                     log('ERROR: ' + (detail || 'unknown error'), 'error');
                 } else if (status === 'warn') {
                     log('Warning: ' + (detail || ''), 'warn');
+                } else if (status === 'info') {
+                    log(detail || '', 'info');
                 } else if (status === 'connecting') {
                     setStatus('disconnected', 'Connecting...');
                     log('Connecting to AISStream.io...', 'info');
