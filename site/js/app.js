@@ -531,49 +531,38 @@
         updateLiveCount();
 
         log('Starting live AIS mode — fleet has ' + vessels.size + ' vessels', 'info');
-        log('Connecting to AISStream.io with MMSI server-side filtering...', 'info');
+        log('Using server-side MMSI filtering (batches of 50)...', 'info');
 
         const boundingBoxes = AISClient.getBoundingBox('global');
-        let msgCount = 0;
         let fleetHits = 0;
 
         aisClient = new AISClient(
             (data) => {
-                msgCount++;
                 const parsed = AISClient.parseAISMessage(data);
                 const vessel = vessels.get(parsed.mmsi);
                 const isNew = vessel && vessel.lat == null && parsed.lat != null;
                 handleVesselUpdate(parsed);
                 if (isNew) {
                     fleetHits++;
-                    log('Position received: <b>' + (parsed.name || parsed.mmsi) + '</b> — ' +
-                        (parsed.lat != null ? parsed.lat.toFixed(4) + ', ' + parsed.lng.toFixed(4) : 'no position'), 'success');
+                    log('Position: <b>' + (parsed.name || parsed.mmsi) + '</b> — ' +
+                        (parsed.lat != null ? parsed.lat.toFixed(4) + ', ' + parsed.lng.toFixed(4) : ''), 'success');
                 }
                 updateLiveCount();
-                if (msgCount % 100 === 0) {
-                    log('AIS stats: ' + msgCount + ' messages processed, ' + fleetHits + ' fleet vessels located', 'info');
-                }
             },
             (status, detail) => {
                 if (status === 'connected') {
-                    setStatus('connected', 'Live AIS');
-                    log('Connected to AISStream.io WebSocket', 'success');
+                    setStatus('connected', 'Live AIS (' + (detail || '') + ')');
                 } else if (status === 'disconnected') {
                     setStatus('disconnected', 'Disconnected');
-                    log('Disconnected: ' + (detail || 'connection closed'), 'warn');
-                } else if (status === 'reconnecting') {
-                    setStatus('disconnected', detail || 'Reconnecting...');
-                    log('Reconnecting: ' + (detail || ''), 'warn');
+                    log('Disconnected: ' + (detail || ''), 'warn');
                 } else if (status === 'error') {
-                    setStatus('disconnected', detail || 'Error');
                     log('ERROR: ' + (detail || 'unknown error'), 'error');
                 } else if (status === 'warn') {
-                    log('Warning: ' + (detail || ''), 'warn');
+                    log(detail || '', 'warn');
                 } else if (status === 'info') {
                     log(detail || '', 'info');
                 } else if (status === 'connecting') {
                     setStatus('disconnected', 'Connecting...');
-                    log('Connecting to AISStream.io...', 'info');
                 }
             }
         );
