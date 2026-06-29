@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yacht Finder — Live AIS Tracker</title>
+    <link rel="stylesheet" href="css/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26F5;</text></svg>">
+</head>
+<body>
+    <div id="app">
+        <header id="header">
+            <div class="header-left">
+                <h1 class="logo">Yacht Finder</h1>
+                <span class="tagline">Live AIS Tracker</span>
+            </div>
+            <div class="header-center">
+                <div class="search-container">
+                    <input type="text" id="search-input" placeholder="Search by yacht name or MMSI..." autocomplete="off" />
+                    <div id="search-results" class="search-results hidden"></div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div id="connection-status" class="status disconnected">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Disconnected</span>
+                </div>
+                <span id="vessel-count" class="vessel-count">0 vessels</span>
+                <button id="settings-btn" class="icon-btn" title="Settings">&#9881;</button>
+            </div>
+        </header>
+
+        <div id="map-container">
+            <div id="map"></div>
+
+            <div id="sidebar" class="sidebar hidden">
+                <button id="sidebar-close" class="sidebar-close">&times;</button>
+                <div id="vessel-detail">
+                    <div class="vessel-header">
+                        <h2 id="detail-name">—</h2>
+                        <span id="detail-type" class="vessel-type-badge">—</span>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <label>MMSI</label>
+                            <span id="detail-mmsi">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Call Sign</label>
+                            <span id="detail-callsign">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Flag</label>
+                            <span id="detail-flag">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>IMO</label>
+                            <span id="detail-imo">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Speed</label>
+                            <span id="detail-speed">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Course</label>
+                            <span id="detail-course">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Heading</label>
+                            <span id="detail-heading">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Nav Status</label>
+                            <span id="detail-navstatus">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Destination</label>
+                            <span id="detail-destination">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>ETA</label>
+                            <span id="detail-eta">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Dimensions</label>
+                            <span id="detail-dimensions">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Draught</label>
+                            <span id="detail-draught">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Position</label>
+                            <span id="detail-position">—</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Last Update</label>
+                            <span id="detail-updated">—</span>
+                        </div>
+                    </div>
+                    <div class="detail-actions">
+                        <button id="btn-track" class="action-btn">Show Trail</button>
+                        <button id="btn-follow" class="action-btn">Follow</button>
+                        <button id="btn-center" class="action-btn">Center</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="controls" class="map-controls">
+                <div class="control-group">
+                    <label class="control-label">
+                        <input type="checkbox" id="filter-yachts" />
+                        Yachts only
+                    </label>
+                    <label class="control-label">
+                        <input type="checkbox" id="show-trails" />
+                        Show all trails
+                    </label>
+                    <label class="control-label">
+                        <input type="checkbox" id="show-labels" checked />
+                        Show labels
+                    </label>
+                </div>
+            </div>
+
+            <div id="legend" class="map-legend">
+                <div class="legend-item"><span class="legend-dot" style="background:#2196F3"></span> Sailing yacht</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#00BCD4"></span> Motor yacht</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#9C27B0"></span> Pleasure craft</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#607D8B"></span> Other vessel</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#F44336"></span> Selected</div>
+            </div>
+        </div>
+
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button id="modal-close" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group">
+                        <label for="api-key">AISStream.io API Key</label>
+                        <p class="setting-hint">Get a free key at <a href="https://aisstream.io" target="_blank" rel="noopener">aisstream.io</a></p>
+                        <input type="text" id="api-key" placeholder="Enter your API key..." />
+                    </div>
+                    <div class="setting-group">
+                        <label>Data Source</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="data-source" value="demo" checked /> Demo data (simulated yachts)</label>
+                            <label><input type="radio" name="data-source" value="live" /> Live AIS data (requires API key)</label>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <label>Map Region (for live data)</label>
+                        <select id="region-select">
+                            <option value="global">Global</option>
+                            <option value="mediterranean" selected>Mediterranean</option>
+                            <option value="caribbean">Caribbean</option>
+                            <option value="northsea">North Sea / English Channel</option>
+                            <option value="useast">US East Coast</option>
+                            <option value="scandinavia">Scandinavia / Baltic</option>
+                            <option value="southeast-asia">Southeast Asia</option>
+                            <option value="custom">Custom (use map bounds)</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label for="trail-length">Trail length (points)</label>
+                        <input type="range" id="trail-length" min="10" max="200" value="50" />
+                        <span id="trail-length-value">50</span>
+                    </div>
+                    <button id="save-settings" class="primary-btn">Save & Connect</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/leaflet.js"></script>
+    <script src="js/demo-data.js"></script>
+    <script src="js/ais-client.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
