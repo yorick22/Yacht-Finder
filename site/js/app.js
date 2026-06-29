@@ -560,13 +560,15 @@
                     log('Connected to AISStream.io WebSocket', 'success');
                 } else if (status === 'disconnected') {
                     setStatus('disconnected', 'Disconnected');
-                    log('Disconnected from AISStream.io', 'warn');
+                    log('Disconnected: ' + (detail || 'connection closed'), 'warn');
                 } else if (status === 'reconnecting') {
                     setStatus('disconnected', detail || 'Reconnecting...');
-                    log('Reconnecting... ' + (detail || ''), 'warn');
+                    log('Reconnecting: ' + (detail || ''), 'warn');
                 } else if (status === 'error') {
                     setStatus('disconnected', detail || 'Error');
-                    log('Error: ' + (detail || 'WebSocket error'), 'error');
+                    log('ERROR: ' + (detail || 'unknown error'), 'error');
+                } else if (status === 'warn') {
+                    log('Warning: ' + (detail || ''), 'warn');
                 } else if (status === 'connecting') {
                     setStatus('disconnected', 'Connecting...');
                     log('Connecting to AISStream.io...', 'info');
