@@ -11,6 +11,22 @@
     let aisClient = null;
     let demoInterval = null;
     let settings = loadSettings();
+    const LOG_MAX = 500;
+
+    function log(msg, level) {
+        level = level || 'info';
+        const el = document.getElementById('log-entries');
+        if (!el) return;
+        const now = new Date();
+        const ts = [now.getHours(), now.getMinutes(), now.getSeconds()]
+            .map(n => String(n).padStart(2, '0')).join(':');
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + level;
+        entry.innerHTML = '<span class="log-time">' + ts + '</span><span class="log-msg">' + msg + '</span>';
+        el.appendChild(entry);
+        while (el.children.length > LOG_MAX) el.removeChild(el.firstChild);
+        el.scrollTop = el.scrollHeight;
+    }
 
     function loadSettings() {
         try {
@@ -443,6 +459,7 @@
 
         updateAllMarkers();
         setStatus('demo', 'Demo mode');
+        log('Demo mode started with ' + demoVessels.length + ' simulated fleet yachts', 'info');
 
         const bounds = DemoData.REGIONS[region];
         if (bounds) {
@@ -513,20 +530,47 @@
         preloadFleet();
         updateLiveCount();
 
+        log('Starting live AIS mode — fleet has ' + vessels.size + ' vessels', 'info');
+        log('Connecting to AISStream.io (global bounding box)...', 'info');
+
         const boundingBoxes = AISClient.getBoundingBox('global');
+        let msgCount = 0;
+        let fleetHits = 0;
 
         aisClient = new AISClient(
             (data) => {
+                msgCount++;
                 const parsed = AISClient.parseAISMessage(data);
+                const vessel = vessels.get(parsed.mmsi);
+                const isNew = vessel && vessel.lat == null && parsed.lat != null;
                 handleVesselUpdate(parsed);
+                if (isNew) {
+                    fleetHits++;
+                    log('Position received: <b>' + (parsed.name || parsed.mmsi) + '</b> — ' +
+                        (parsed.lat != null ? parsed.lat.toFixed(4) + ', ' + parsed.lng.toFixed(4) : 'no position'), 'success');
+                }
                 updateLiveCount();
+                if (msgCount % 100 === 0) {
+                    log('AIS stats: ' + msgCount + ' messages processed, ' + fleetHits + ' fleet vessels located', 'info');
+                }
             },
             (status, detail) => {
-                if (status === 'connected') setStatus('connected', 'Live AIS');
-                else if (status === 'disconnected') setStatus('disconnected', 'Disconnected');
-                else if (status === 'reconnecting') setStatus('disconnected', detail || 'Reconnecting...');
-                else if (status === 'error') setStatus('disconnected', detail || 'Error');
-                else if (status === 'connecting') setStatus('disconnected', 'Connecting...');
+                if (status === 'connected') {
+                    setStatus('connected', 'Live AIS');
+                    log('Connected to AISStream.io WebSocket', 'success');
+                } else if (status === 'disconnected') {
+                    setStatus('disconnected', 'Disconnected');
+                    log('Disconnected from AISStream.io', 'warn');
+                } else if (status === 'reconnecting') {
+                    setStatus('disconnected', detail || 'Reconnecting...');
+                    log('Reconnecting... ' + (detail || ''), 'warn');
+                } else if (status === 'error') {
+                    setStatus('disconnected', detail || 'Error');
+                    log('Error: ' + (detail || 'WebSocket error'), 'error');
+                } else if (status === 'connecting') {
+                    setStatus('disconnected', 'Connecting...');
+                    log('Connecting to AISStream.io...', 'info');
+                }
             }
         );
 
@@ -596,6 +640,19 @@
         document.getElementById('modal-close').addEventListener('click', closeSettings);
         document.getElementById('save-settings').addEventListener('click', applySettings);
         document.getElementById('sidebar-close').addEventListener('click', deselectVessel);
+
+        document.getElementById('log-toggle').addEventListener('click', () => {
+            document.getElementById('log-panel').classList.add('hidden');
+            document.getElementById('log-open-btn').classList.remove('hidden');
+        });
+        document.getElementById('log-open-btn').addEventListener('click', () => {
+            document.getElementById('log-panel').classList.remove('hidden');
+            document.getElementById('log-open-btn').classList.add('hidden');
+        });
+        document.getElementById('log-clear').addEventListener('click', () => {
+            document.getElementById('log-entries').innerHTML = '';
+            log('Log cleared', 'info');
+        });
 
         document.getElementById('settings-modal').addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal') closeSettings();

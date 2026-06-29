@@ -387,6 +387,106 @@ body {
     border-color: var(--accent-hover);
 }
 
+.log-panel {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 200px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--bg-tertiary);
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+}
+
+.log-panel.hidden {
+    display: none;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.log-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.log-action-btn {
+    background: none;
+    border: 1px solid var(--text-secondary);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.log-action-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+}
+
+.log-entries {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 12px;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 1px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.log-time {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.log-msg { color: var(--text-primary); }
+.log-entry.info .log-msg { color: var(--accent); }
+.log-entry.success .log-msg { color: var(--success); }
+.log-entry.warn .log-msg { color: var(--warning); }
+.log-entry.error .log-msg { color: var(--selected); }
+
+.log-open-btn {
+    position: absolute;
+    bottom: 24px;
+    right: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--bg-tertiary);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    cursor: pointer;
+    z-index: 998;
+    box-shadow: var(--shadow);
+}
+
+.log-open-btn:hover {
+    color: var(--text-primary);
+}
+
+.log-open-btn.hidden {
+    display: none;
+}
+
 .map-controls {
     position: absolute;
     top: 12px;
