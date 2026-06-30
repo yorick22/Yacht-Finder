@@ -1,100 +1,108 @@
 class AISClient {
+    static BATCH_SIZE = 50;
+    static DWELL_MS = 70000;
+    static GAP_MS = 2500;
+    static WATCHDOG_MS = 20000;
+
     constructor(onMessage, onStatus) {
         this.ws = null;
         this.apiKey = null;
         this.onMessage = onMessage;
         this.onStatus = onStatus;
-        this.reconnectTimer = null;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 10;
-        this.fleetMMSIs = new Set();
+        this.batchTimer = null;
+        this.watchdogTimer = null;
+        this.batches = [];
+        this.batchIndex = 0;
+        this.cycleCount = 0;
+        this.running = false;
+        this.rawEventCount = 0;
         this.totalMessages = 0;
-        this.fleetMessages = 0;
-        this.lastStatsTime = Date.now();
     }
 
-    connect(apiKey, boundingBoxes, fleetOnly) {
-        this.apiKey = apiKey;
-        this.boundingBoxes = boundingBoxes;
-        this.reconnectAttempts = 0;
-        this.totalMessages = 0;
-        this.fleetMessages = 0;
-        this.lastStatsTime = Date.now();
+    static chunk(arr, size) {
+        const out = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+    }
 
-        this.fleetMMSIs.clear();
-        if (fleetOnly && typeof FLEET !== 'undefined') {
-            FLEET.forEach(f => { if (f.m) this.fleetMMSIs.add(f.m); });
+    connect(apiKey, fleetMMSIs) {
+        this.apiKey = apiKey;
+        this.batches = AISClient.chunk(fleetMMSIs, AISClient.BATCH_SIZE);
+        this.batchIndex = 0;
+        this.cycleCount = 0;
+        this.totalMessages = 0;
+        this.running = true;
+
+        if (this.batches.length === 0) {
+            this.onStatus('error', 'No fleet MMSIs to track');
+            return;
         }
 
-        this._connect();
+        this.onStatus('info', 'Rotation mode: ' + fleetMMSIs.length + ' yachts in ' + this.batches.length + ' batches of up to ' + AISClient.BATCH_SIZE);
+        this._connectBatch();
     }
 
-    _connect() {
+    _connectBatch() {
+        if (!this.running) return;
+
         if (this.ws) {
             this.ws.onclose = null;
             this.ws.close();
+            this.ws = null;
         }
+        clearTimeout(this.batchTimer);
+        clearTimeout(this.watchdogTimer);
+
+        const batch = this.batches[this.batchIndex];
+        const batchNum = this.batchIndex + 1;
+        this.rawEventCount = 0;
 
         this.onStatus('connecting');
+        this.onStatus('info', 'Batch ' + batchNum + '/' + this.batches.length + ': connecting (' + batch.length + ' yachts)...');
 
         try {
             this.ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
         } catch (e) {
             this.onStatus('error', 'Failed to create WebSocket');
+            this.batchTimer = setTimeout(() => this._advanceBatch(), AISClient.GAP_MS);
             return;
         }
 
         this.ws.onopen = () => {
             const subscription = {
                 Apikey: this.apiKey,
-                BoundingBoxes: this.boundingBoxes,
+                BoundingBoxes: [[[-90, -180], [90, 180]]],
+                FiltersShipMMSI: batch,
                 FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'StandardClassBPositionReport']
             };
-            const debugSub = Object.assign({}, subscription, { Apikey: '***redacted***' });
-            this.onStatus('info', 'Subscription sent: ' + JSON.stringify(debugSub).substring(0, 300));
             this.ws.send(JSON.stringify(subscription));
             this.onStatus('connected');
-            this.reconnectAttempts = 0;
+            this.onStatus('info', 'Batch ' + batchNum + '/' + this.batches.length + ' subscribed — listening for ' + (AISClient.DWELL_MS / 1000) + 's');
 
-            clearTimeout(this.watchdogTimer);
-            this.rawEventCount = 0;
             this.watchdogTimer = setTimeout(() => {
                 if (this.rawEventCount === 0) {
-                    this.onStatus('warn', 'No data from server in 20s after subscribing — subscription may have been rejected silently');
+                    this.onStatus('warn', 'Batch ' + batchNum + '/' + this.batches.length + ': no data received');
                 }
-            }, 20000);
+            }, AISClient.WATCHDOG_MS);
+
+            this.batchTimer = setTimeout(() => this._advanceBatch(), AISClient.DWELL_MS);
         };
 
         this.ws.onmessage = (event) => {
-            this.rawEventCount = (this.rawEventCount || 0) + 1;
+            this.rawEventCount++;
             try {
                 const data = JSON.parse(event.data);
                 if (data.ERROR || data.error) {
-                    const errMsg = data.ERROR || data.error || 'Unknown API error';
-                    this.onStatus('error', 'API: ' + errMsg);
+                    this.onStatus('error', 'API: ' + (data.ERROR || data.error));
                     return;
                 }
-                if (!data.MessageType && !data.MetaData) {
-                    this.onStatus('warn', 'Unexpected message shape: ' + event.data.substring(0, 200));
-                    return;
-                }
+                if (!data.MessageType && !data.MetaData) return;
 
                 this.totalMessages++;
-
                 if (this.totalMessages === 1) {
                     this.onStatus('info', 'First AIS message received — data is flowing');
                 }
 
-                if (this.totalMessages % 1000 === 0) {
-                    const elapsed = Math.round((Date.now() - this.lastStatsTime) / 1000);
-                    this.onStatus('info', 'AIS stream: ' + this.totalMessages + ' total, ' + this.fleetMessages + ' fleet matches (' + elapsed + 's)');
-                }
-
-                if (this.fleetMMSIs.size > 0) {
-                    const mmsi = String((data.MetaData || {}).MMSI || '');
-                    if (!this.fleetMMSIs.has(mmsi)) return;
-                    this.fleetMessages++;
-                }
                 this.onMessage(data);
             } catch (e) {
                 this.onStatus('warn', 'Failed to parse message: ' + event.data.substring(0, 150));
@@ -102,33 +110,43 @@ class AISClient {
         };
 
         this.ws.onerror = () => {
-            this.onStatus('error', 'WebSocket error (connection lost or refused)');
+            this.onStatus('error', 'Batch ' + batchNum + '/' + this.batches.length + ': WebSocket error');
         };
 
         this.ws.onclose = (event) => {
             clearTimeout(this.watchdogTimer);
+            if (!this.running) return;
+            clearTimeout(this.batchTimer);
             const reason = event.reason || '';
             const codeInfo = 'code ' + event.code + (reason ? ': ' + reason : '');
-            if (event.code === 1000) {
-                this.onStatus('disconnected', 'Connection closed normally');
-            } else if (event.code === 1006) {
-                this.onStatus('error', 'Connection dropped (' + codeInfo + ')');
-            } else {
-                this.onStatus('disconnected', 'Closed (' + codeInfo + ')');
-            }
-            if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 30000);
-                this.reconnectAttempts++;
-                this.onStatus('reconnecting', 'Attempt ' + this.reconnectAttempts + '/' + this.maxReconnectAttempts + ' in ' + (delay/1000) + 's...');
-                this.reconnectTimer = setTimeout(() => this._connect(), delay);
-            }
+            this.onStatus('warn', 'Batch ' + batchNum + '/' + this.batches.length + ' connection closed early (' + codeInfo + ')');
+            this.batchTimer = setTimeout(() => this._advanceBatch(), AISClient.GAP_MS);
         };
     }
 
+    _advanceBatch() {
+        if (!this.running) return;
+
+        if (this.ws) {
+            this.ws.onclose = null;
+            this.ws.close();
+            this.ws = null;
+        }
+
+        this.batchIndex++;
+        if (this.batchIndex >= this.batches.length) {
+            this.batchIndex = 0;
+            this.cycleCount++;
+            this.onStatus('info', 'Completed full rotation cycle #' + this.cycleCount + ' (' + this.totalMessages + ' messages total)');
+        }
+
+        this.batchTimer = setTimeout(() => this._connectBatch(), AISClient.GAP_MS);
+    }
+
     disconnect() {
-        clearTimeout(this.reconnectTimer);
+        this.running = false;
+        clearTimeout(this.batchTimer);
         clearTimeout(this.watchdogTimer);
-        this.reconnectAttempts = this.maxReconnectAttempts;
         if (this.ws) {
             this.ws.onclose = null;
             this.ws.close();
@@ -207,30 +225,5 @@ class AISClient {
             15: 'Not defined'
         };
         return statuses[code] || 'Unknown';
-    }
-
-    static getYachtRegions() {
-        return [
-            [[30, -6], [46, 37]],
-            [[46, -12], [62, 12]],
-            [[53, 5], [66, 30]],
-            [[10, -90], [28, -58]],
-            [[24, -83], [45, -65]],
-            [[-10, 95], [22, 130]],
-            [[10, 45], [32, 70]]
-        ];
-    }
-
-    static getBoundingBox(region) {
-        const regions = {
-            global: [[-90, -180], [90, 180]],
-            mediterranean: [[30, -6], [46, 37]],
-            caribbean: [[10, -90], [28, -58]],
-            northsea: [[48, -6], [62, 12]],
-            useast: [[24, -83], [45, -65]],
-            scandinavia: [[53, 5], [72, 32]],
-            'southeast-asia': [[-10, 95], [22, 130]]
-        };
-        return [regions[region] || regions.mediterranean];
     }
 }
