@@ -10,8 +10,11 @@
     let followMMSI = null;
     let aisClient = null;
     let demoInterval = null;
+    let positionsSaveInterval = null;
     let settings = loadSettings();
     const LOG_MAX = 500;
+    const POSITIONS_KEY = 'yachtfinder_positions';
+    const POSITIONS_SAVE_INTERVAL = 20000;
 
     function log(msg, level) {
         level = level || 'info';
@@ -43,6 +46,41 @@
 
     function saveSettings() {
         localStorage.setItem('yachtfinder_settings', JSON.stringify(settings));
+    }
+
+    function savePositions() {
+        try {
+            const data = {};
+            vessels.forEach(v => {
+                if (v.lat == null || v.lng == null) return;
+                data[v.mmsi] = {
+                    lat: v.lat, lng: v.lng, sog: v.sog, cog: v.cog, heading: v.heading,
+                    navStatus: v.navStatus, name: v.name, callSign: v.callSign, imo: v.imo,
+                    shipType: v.shipType, destination: v.destination, draught: v.draught,
+                    dimA: v.dimA, dimB: v.dimB, dimC: v.dimC, dimD: v.dimD, eta: v.eta,
+                    lastUpdate: v.lastUpdate ? new Date(v.lastUpdate).toISOString() : null
+                };
+            });
+            localStorage.setItem(POSITIONS_KEY, JSON.stringify(data));
+        } catch (e) { /* localStorage unavailable or quota exceeded */ }
+    }
+
+    function loadCachedPositions() {
+        let count = 0;
+        try {
+            const data = JSON.parse(localStorage.getItem(POSITIONS_KEY) || '{}');
+            Object.keys(data).forEach(mmsi => {
+                const vessel = vessels.get(mmsi);
+                if (!vessel) return;
+                const cached = data[mmsi];
+                Object.assign(vessel, cached, {
+                    lastUpdate: cached.lastUpdate ? new Date(cached.lastUpdate) : null,
+                    _cached: true
+                });
+                count++;
+            });
+        } catch (e) { /* ignore malformed cache */ }
+        return count;
     }
 
     function shipTypeLabel(type) {
@@ -528,12 +566,18 @@
         stopDemo();
         clearVessels();
         preloadFleet();
+
+        const cachedCount = loadCachedPositions();
+        if (cachedCount > 0) {
+            vessels.forEach(v => { if (v.lat != null) updateMarker(v); });
+            log('Loaded ' + cachedCount + ' cached positions from previous session', 'info');
+        }
         updateLiveCount();
 
         log('Starting live AIS mode — fleet has ' + vessels.size + ' vessels', 'info');
 
-        const boundingBoxes = AISClient.getYachtRegions();
-        log('Covering ' + boundingBoxes.length + ' regions (Med, North Sea, Scandinavia, Caribbean, US East, SE Asia, Arabian Gulf)', 'info');
+        const fleetMMSIs = [];
+        vessels.forEach(v => { if (/^\d+$/.test(v.mmsi)) fleetMMSIs.push(v.mmsi); });
 
         let fleetHits = 0;
 
@@ -557,9 +601,6 @@
                 } else if (status === 'disconnected') {
                     setStatus('disconnected', 'Disconnected');
                     log('Disconnected: ' + (detail || ''), 'warn');
-                } else if (status === 'reconnecting') {
-                    setStatus('disconnected', detail || 'Reconnecting...');
-                    log('Reconnecting: ' + (detail || ''), 'warn');
                 } else if (status === 'error') {
                     setStatus('disconnected', detail || 'Error');
                     log('ERROR: ' + (detail || 'unknown error'), 'error');
@@ -574,13 +615,19 @@
             }
         );
 
-        aisClient.connect(settings.apiKey, boundingBoxes, true);
+        aisClient.connect(settings.apiKey, fleetMMSIs);
+
+        clearInterval(positionsSaveInterval);
+        positionsSaveInterval = setInterval(savePositions, POSITIONS_SAVE_INTERVAL);
     }
 
     function stopLive() {
+        clearInterval(positionsSaveInterval);
+        positionsSaveInterval = null;
         if (aisClient) {
             aisClient.disconnect();
             aisClient = null;
+            savePositions();
         }
     }
 
@@ -636,6 +683,10 @@
     }
 
     function initUI() {
+        window.addEventListener('beforeunload', () => {
+            if (aisClient) savePositions();
+        });
+
         document.getElementById('settings-btn').addEventListener('click', openSettings);
         document.getElementById('modal-close').addEventListener('click', closeSettings);
         document.getElementById('save-settings').addEventListener('click', applySettings);
