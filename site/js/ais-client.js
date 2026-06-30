@@ -50,13 +50,23 @@ class AISClient {
                 BoundingBoxes: this.boundingBoxes,
                 FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'StandardClassBPositionReport']
             };
-            this.onStatus('info', 'Subscription: ' + this.boundingBoxes.length + ' regions, filtering ' + this.fleetMMSIs.size + ' MMSIs client-side');
+            const debugSub = Object.assign({}, subscription, { Apikey: '***redacted***' });
+            this.onStatus('info', 'Subscription sent: ' + JSON.stringify(debugSub).substring(0, 300));
             this.ws.send(JSON.stringify(subscription));
             this.onStatus('connected');
             this.reconnectAttempts = 0;
+
+            clearTimeout(this.watchdogTimer);
+            this.rawEventCount = 0;
+            this.watchdogTimer = setTimeout(() => {
+                if (this.rawEventCount === 0) {
+                    this.onStatus('warn', 'No data from server in 20s after subscribing — subscription may have been rejected silently');
+                }
+            }, 20000);
         };
 
         this.ws.onmessage = (event) => {
+            this.rawEventCount = (this.rawEventCount || 0) + 1;
             try {
                 const data = JSON.parse(event.data);
                 if (data.ERROR || data.error) {
@@ -64,7 +74,10 @@ class AISClient {
                     this.onStatus('error', 'API: ' + errMsg);
                     return;
                 }
-                if (!data.MessageType && !data.MetaData) return;
+                if (!data.MessageType && !data.MetaData) {
+                    this.onStatus('warn', 'Unexpected message shape: ' + event.data.substring(0, 200));
+                    return;
+                }
 
                 this.totalMessages++;
 
@@ -84,7 +97,7 @@ class AISClient {
                 }
                 this.onMessage(data);
             } catch (e) {
-                // ignore malformed
+                this.onStatus('warn', 'Failed to parse message: ' + event.data.substring(0, 150));
             }
         };
 
@@ -93,6 +106,7 @@ class AISClient {
         };
 
         this.ws.onclose = (event) => {
+            clearTimeout(this.watchdogTimer);
             const reason = event.reason || '';
             const codeInfo = 'code ' + event.code + (reason ? ': ' + reason : '');
             if (event.code === 1000) {
@@ -113,6 +127,7 @@ class AISClient {
 
     disconnect() {
         clearTimeout(this.reconnectTimer);
+        clearTimeout(this.watchdogTimer);
         this.reconnectAttempts = this.maxReconnectAttempts;
         if (this.ws) {
             this.ws.onclose = null;
