@@ -39,9 +39,10 @@
                 dataSource: s.dataSource || 'demo',
                 region: s.region || 'mediterranean',
                 trailLength: s.trailLength || 50,
-                showLabels: s.showLabels !== false
+                showLabels: s.showLabels !== false,
+                testMode: s.testMode === true
             };
-        } catch { return { apiKey: '', dataSource: 'demo', region: 'mediterranean', trailLength: 50, showLabels: true }; }
+        } catch { return { apiKey: '', dataSource: 'demo', region: 'mediterranean', trailLength: 50, showLabels: true, testMode: false }; }
     }
 
     function saveSettings() {
@@ -576,8 +577,13 @@
 
         log('Starting live AIS mode — fleet has ' + vessels.size + ' vessels', 'info');
 
-        const fleetMMSIs = [];
+        let fleetMMSIs = [];
         vessels.forEach(v => { if (/^\d+$/.test(v.mmsi)) fleetMMSIs.push(v.mmsi); });
+
+        if (settings.testMode) {
+            fleetMMSIs = fleetMMSIs.slice(0, 50);
+            log('Test mode: tracking only the first ' + fleetMMSIs.length + ' yachts', 'warn');
+        }
 
         let fleetHits = 0;
 
@@ -655,6 +661,7 @@
         document.getElementById('trail-length').value = settings.trailLength;
         document.getElementById('trail-length-value').textContent = settings.trailLength;
         document.getElementById('region-select').value = settings.region;
+        document.getElementById('test-mode').checked = settings.testMode;
         document.querySelector(`input[name="data-source"][value="${settings.dataSource}"]`).checked = true;
         document.getElementById('settings-modal').classList.remove('hidden');
     }
@@ -667,6 +674,7 @@
         settings.apiKey = document.getElementById('api-key').value.trim();
         settings.trailLength = parseInt(document.getElementById('trail-length').value);
         settings.region = document.getElementById('region-select').value;
+        settings.testMode = document.getElementById('test-mode').checked;
         settings.dataSource = document.querySelector('input[name="data-source"]:checked').value;
         saveSettings();
         closeSettings();
