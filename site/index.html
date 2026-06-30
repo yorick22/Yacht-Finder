@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yacht Finder — Live AIS Tracker</title>
     <link rel="stylesheet" href="css/leaflet.css" />
-    <link rel="stylesheet" href="css/style.css?v=10" />
+    <link rel="stylesheet" href="css/style.css?v=11" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26F5;</text></svg>">
 </head>
 <body>
@@ -174,7 +174,11 @@
                         </div>
                     </div>
                     <div class="setting-group">
-                        <label>Map Region (for live data)</label>
+                        <label><input type="checkbox" id="test-mode" /> Test mode — track only the first 50 yachts</label>
+                        <p class="setting-hint">Use this to verify live AIS works before tracking the full fleet.</p>
+                    </div>
+                    <div class="setting-group">
+                        <label>Map Region (for demo data)</label>
                         <select id="region-select">
                             <option value="global">Global</option>
                             <option value="mediterranean" selected>Mediterranean</option>
@@ -198,9 +202,9 @@
     </div>
 
     <script src="js/leaflet.js"></script>
-    <script src="js/fleet-data.js?v=10"></script>
-    <script src="js/demo-data.js?v=10"></script>
-    <script src="js/ais-client.js?v=10"></script>
-    <script src="js/app.js?v=10"></script>
+    <script src="js/fleet-data.js?v=11"></script>
+    <script src="js/demo-data.js?v=11"></script>
+    <script src="js/ais-client.js?v=11"></script>
+    <script src="js/app.js?v=11"></script>
 </body>
 </html>
